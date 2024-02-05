@@ -2,7 +2,7 @@
 // Created by rolando on 5/15/17.
 //
 
-#include <stdint-gcc.h>
+#include <stdint.h>
 #include "H264Decoder.h"
 #include <assert.h>
 #include <cstring>
@@ -11,11 +11,11 @@
 
 H264Decoder::H264Decoder() {
     av_log_set_callback(log_av);
-    avcodec_register_all();
+    //avcodec_register_all();
 
-    av_init_packet(&av_packet);
+    AVPacket av_packet = {0};
 
-    AVCodec *codec = avcodec_find_decoder(AV_CODEC_ID_H264);
+    const AVCodec *codec = avcodec_find_decoder(AV_CODEC_ID_H264);
     assert(codec != NULL);
 
     context = avcodec_alloc_context3(codec);
@@ -58,20 +58,26 @@ int H264Decoder::image(uint8_t *nals, int nals_size, uint8_t *image) {
     av_packet.size = nals_size;
 
     int got_frame = 0;
-    int frame_size = avcodec_decode_video2(context, frame, &got_frame, &av_packet);
+    if (avcodec_send_packet(context, &av_packet) < 0) {
+        // handle error
+    }
 
-    if (got_frame) {
-        assert(frame_size == av_packet.size);
+    while ((got_frame = avcodec_receive_frame(context, frame)) == 0) {
         sws_scale(sws_context, (const uint8_t *const *) frame->data, frame->linesize, 0, WII_VIDEO_HEIGHT,
                   out_frame->data, out_frame->linesize);
     }
-    else
-        return 0;
+
+    if(got_frame != AVERROR(EAGAIN) && got_frame != AVERROR_EOF) {
+        // handle error
+    }
+
     int image_size = out_frame->linesize[0] * WII_VIDEO_HEIGHT;
     memcpy(image, out_frame->data[0], (size_t) image_size);
     return image_size;
 }
 
+
 void H264Decoder::log_av(void *avcl, int level, const char *fmt, va_list vl) {
     Logger::log("h264", Logger::VERBOSE, fmt, vl);
 }
+
